@@ -105,19 +105,22 @@ jobs:
         uses: actions/upload-artifact@main
         with:
           name: org.builetuananh.amethyst-${{ matrix.platform_name }}.ipa
-          path: artifacts/org.builetuananh.amethyst-*-${{ matrix.platform_name }}.ipa
+          path: artifacts/*-${{ matrix.platform_name }}.ipa
+
       - name: Upload regular tipa
         uses: actions/upload-artifact@main
         with:
           name: org.builetuananh.amethyst-${{ matrix.platform_name }}-trollstore.tipa
-          path: artifacts/org.builetuananh.amethyst-*-${{ matrix.platform_name }}-trollstore.tipa
+          path: artifacts/*-${{ matrix.platform_name }}-trollstore.tipa
+
       - name: Upload slimmed ipa
         uses: actions/upload-artifact@main
         with:
           name: org.builetuananh.amethyst.slimmed-${{ matrix.platform_name }}.ipa
-          path: artifacts/org.builetuananh.amethyst.slimmed-*-${{ matrix.platform_name }}.ipa
+          path: artifacts/*.slimmed-*-${{ matrix.platform_name }}.ipa
+
       - name: Upload slimmed tipa
         uses: actions/upload-artifact@main
         with:
           name: org.builetuananh.amethyst.slimmed-${{ matrix.platform_name }}-trollstore.tipa
-          path: artifacts/org.builetuananh.amethyst.slimmed-*-${{ matrix.platform_name }}-trollstore.tipa
+          path: artifacts/*.slimmed-*-${{ matrix.platform_name }}-trollstore.tipa
