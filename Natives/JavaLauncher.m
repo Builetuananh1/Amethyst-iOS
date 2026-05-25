@@ -14,7 +14,6 @@
 #import "ios_uikit_bridge.h"
 #import "JavaLauncher.h"
 #import "LauncherPreferences.h"
-#import "PLLogOutputView.h"
 #import "PLProfiles.h"
 
 #define fm NSFileManager.defaultManager
@@ -22,10 +21,9 @@
 extern char **environ;
 
 BOOL validateVirtualMemorySpace(size_t size) {
-    size <<= 20; // convert to MB
     void *map = mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    // check if process successfully maps and unmaps a contiguous range
-    if(map == MAP_FAILED || munmap(map, size) != 0)
+    // Check if process successfully maps and unmaps a contiguous range
+    if (map == MAP_FAILED || munmap(map, size) != 0)
         return NO;
     return YES;
 }
@@ -37,7 +35,7 @@ void init_loadDefaultEnv() {
     setenv("LD_LIBRARY_PATH", "", 1);
 
     // Ignore mipmap for performance(?) seems does not affect iOS
-    //setenv("LIBGL_MIPMAP", "3", 1);
+    setenv("LIBGL_MIPMAP", "3", 1);
 
     // Disable overloaded functions hack for Minecraft 1.17+
     setenv("LIBGL_NOINTOVLHACK", "1", 1);
@@ -101,55 +99,24 @@ void init_loadCustomJvmFlags(int* argc, const char** argv) {
 int launchJVM(NSString *username, id launchTarget, int width, int height, int minVersion) {
     NSLog(@"[JavaLauncher] Beginning JVM launch");
 
+    if ([NSFileManager.defaultManager fileExistsAtPath:[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"LSAppInfo.plist"]]) {
+        NSDebugLog(@"[JavaLauncher] Running in LiveContainer, skipping dyld patch");
+    } else {
+        if (@available(iOS 26.0, *)) {
+            // Disable Library Validtion bypass for iOS 26 because of stricter JIT
+        } else {
+            // Activate Library Validation bypass for external runtime and dylibs (JNA, etc)
+            init_bypassDyldLibValidation();
+        }
+    }
+
+
     init_loadDefaultEnv();
     init_loadCustomEnv();
-
-    BOOL requiresTXMWorkaround = DeviceHasJITFlags(JIT_FLAG_FORCE_MIRRORED | JIT_FLAG_HAS_TXM);
-    BOOL jit26AlwaysAttached = getPrefBool(@"debug.debug_always_attached_jit");
-    if (requiresTXMWorkaround) {
-        static void *result;
-        if(!result) result = JIT26CreateRegionLegacy(getpagesize());
-        if ((uint32_t)result != 0x690000E0) {
-            munmap(result, getpagesize());
-            // we can't continue since legacy script only allows calling breakpoint once
-            NSString *inBundleScriptPath = [NSBundle.mainBundle pathForResource:@"UniversalJIT26" ofType:@"js"];
-            NSString *lcAppInfoPath = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"LCAppInfo.plist"];
-            NSMutableDictionary *lcAppInfo = [NSMutableDictionary dictionaryWithContentsOfFile:lcAppInfoPath];
-            if(lcAppInfo) {
-                // if this is inside LiveContainer, we assign script ourselves and prompt user to restart Amethyst
-                lcAppInfo[@"jitLaunchScriptJs"] = [[NSData dataWithContentsOfFile:inBundleScriptPath] base64EncodedStringWithOptions:0];
-                if([lcAppInfo writeToFile:lcAppInfoPath atomically:YES]) {
-                    showDialog(localize(@"Error", nil), @"Amethyst was launched with a legacy script. We have updated the script to Universal, please restart LiveContainer to continue.");
-                    [PLLogOutputView handleExitCode:1];
-                    return 1;
-                }
-            }
-            [NSFileManager.defaultManager copyItemAtPath:inBundleScriptPath toPath:[NSString stringWithFormat:@"%s/UniversalJIT26.js", getenv("POJAV_HOME")] error:nil];
-            showDialog(localize(@"Error", nil), @"Support for legacy script has been removed. Please switch to Universal JIT script. To import it, long-press on Amethyst when enabling JIT in StikDebug and tap \"Assign Script\", then go to Amethyst's Documents directory and pick it. (on sideloaded StikDebug, the builtin script is named Amethyst-MeloNX.js)");
-            [PLLogOutputView handleExitCode:1];
-            return 1;
-        }
-        JIT26SendJITScript([NSString stringWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"UniversalJIT26Extension" ofType:@"js"]]);
-        JIT26SetDetachAfterFirstBr(!jit26AlwaysAttached);
-        // make sure we don't get stuck in EXC_BAD_ACCESS
-        task_set_exception_ports(mach_task_self(), EXC_MASK_BAD_ACCESS, 0, EXCEPTION_DEFAULT, MACHINE_THREAD_STATE);
-    }
-    if (!requiresTXMWorkaround || jit26AlwaysAttached) {
-        if (jit26AlwaysAttached) {
-            // Only allow StikDebug to catch our breakpoints to prevent any stutters
-            task_set_exception_ports(mach_task_self(), EXC_MASK_ALL & ~EXC_MASK_BREAKPOINT, 0,
-                EXCEPTION_DEFAULT, THREAD_STATE_NONE);
-        }
-        // Activate Library Validation bypass for external runtime and dylibs (JNA, etc)
-        init_bypassDyldLibValidation();
-    } else {
-        NSLog(@"[DyldLVBypass] Hook disabled! Loading unsigned dylib will cause code signature error.");
-    }
 
     BOOL launchJar = NO;
     NSString *gameDir;
     NSString *defaultJRETag;
-    NSCAssert(launchTarget, @"Unexpected nil launchTarget");
     if ([launchTarget isKindOfClass:NSDictionary.class]) {
         // Get preferred Java version from current profile
         int preferredJavaVersion = [PLProfiles resolveKeyForCurrentProfile:@"javaVersion"].intValue;
@@ -167,10 +134,10 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
             defaultJRETag = @"1_17_newer";
         }
 
-        // Setup POJAV_RENDERER
+        // Setup POJAVPATCH_RENDERER
         NSString *renderer = [PLProfiles resolveKeyForCurrentProfile:@"renderer"];
         NSLog(@"[JavaLauncher] RENDERER is set to %@\n", renderer);
-        setenv("POJAV_RENDERER", renderer.UTF8String, 1);
+        setenv("POJAVPATCH_RENDERER", renderer.UTF8String, 1);
         // Setup gameDir
         gameDir = [NSString stringWithFormat:@"%s/instances/%@/%@",
             getenv("POJAV_HOME"), getPrefObject(@"general.game_directory"),
@@ -191,13 +158,17 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
             isExecuteJar ? [launchTarget lastPathComponent] : PLProfiles.current.selectedProfile[@"lastVersionId"], minVersion]);
         return 1;
     } else if ([javaHome hasPrefix:@(getenv("POJAV_HOME"))]) {
-        // Symlink libawt_xawt.dylib
+        // Copy libawt_xawt.dylib
         NSString *dest = [NSString stringWithFormat:@"%@/lib/libawt_xawt.dylib", javaHome];
         NSString *source = [NSString stringWithFormat:@"%@/Frameworks/libawt_xawt.dylib", NSBundle.mainBundle.bundlePath];
         NSError *error;
-        [fm createSymbolicLinkAtPath:dest withDestinationPath:source error:&error];
-        if (error) {
-            NSLog(@"[JavaLauncher] Symlink libawt_xawt.dylib failed: %@", error.localizedDescription);
+        if (![fm fileExistsAtPath:dest]) {
+            [fm copyItemAtPath:source toPath:dest error:&error];
+            if (error) {
+                NSLog(@"[JavaLauncher] Failed to copy libawt_xawt.dylib: %@", error.localizedDescription);
+            } else {
+                NSLog(@"[JavaLauncher] Copied libawt_xawt.dylib to %@", dest);
+            }
         }
     }
 
@@ -207,18 +178,14 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     int allocmem;
     if (getPrefBool(@"java.auto_ram")) {
         CGFloat autoRatio = getEntitlementValue(@"com.apple.private.memorystatus") ? 0.4 : 0.25;
-        allocmem = roundf((NSProcessInfo.processInfo.physicalMemory >> 20) * autoRatio);
+        allocmem = roundf((NSProcessInfo.processInfo.physicalMemory / 1048576) * autoRatio);
     } else {
         allocmem = getPrefInt(@"java.allocated_memory");
     }
     NSLog(@"[JavaLauncher] Max RAM allocation is set to %d MB", allocmem);
     if (!validateVirtualMemorySpace(allocmem)) {
         UIKit_returnToSplitView();
-        if (getEntitlementValue(@"com.apple.developer.kernel.increased-memory-limit")) {
-            showDialog(localize(@"Error", nil), @"Insufficient contiguous virtual memory space. Lower memory allocation and try again.");
-        } else {
-            showDialog(localize(@"Error", nil), @"Insufficient contiguous virtual memory space. Increased Memory Limit entitlement is missing, please add it via GetMoreRam app.");
-        }
+        showDialog(localize(@"Error", nil), @"Insufficient contiguous virtual memory space. Lower memory allocation and try again.");
         return 1;
     }
 
@@ -241,13 +208,14 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     margv[++margc] = "-Dorg.lwjgl.system.allocator=system";
     //margv[++margc] = "-Dorg.lwjgl.util.NoChecks=true";
     margv[++margc] = "-Dlog4j2.formatMsgNoLookups=true";
+    margv[++margc] = "-Dio.netty.transport.noNative=true";
 
     // Preset OpenGL libname
-    const char *glLibName = getenv("POJAV_RENDERER");
+    const char *glLibName = getenv("POJAVPATCH_RENDERER");
     if (glLibName) {
         if (!strcmp(glLibName, "auto")) {
             // workaround only applies to 1.20.2+
-            glLibName = RENDERER_NAME_MTL_ANGLE;
+            glLibName = RENDERER_NAME_MOBILEGLUES;
         }
         margv[++margc] = [NSString stringWithFormat:@"-Dorg.lwjgl.opengl.libname=%s", glLibName].UTF8String;
     }
