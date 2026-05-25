@@ -19,19 +19,19 @@ jobs:
           - platform: 2
             platform_name: ios
 
+    # Sử dụng máy chủ Mac miễn phí của GitHub (phù hợp khi bạn không có máy chủ riêng)
     runs-on: macos-latest
+    
     steps:
       - name: Install include tools
         run: brew install temurin@8 ldid make
 
       - name: Remove work folders
-        env:
-          password: ${{ secrets.ELLIE_MINI_SECRET }}
         run: |
           echo "before"
           ls -lah ./
-          echo $password | sudo -S rm -rf ./* || true
-          echo $password | sudo -S rm -rf ./.??* || true
+          rm -rf ./* || true
+          rm -rf ./.??* || true
           echo "after"
           ls -lah ./
           
@@ -85,11 +85,15 @@ jobs:
           git push
 
       - name: Build for ${{ matrix.platform_name }}
-        env:
-          password: ${{ secrets.ELLIE_MINI_SECRET }}
         run: |
-          export PATH=/opt/procursus/bin:/opt/homebrew/bin:$PATH
+          export PATH=/opt/homebrew/bin:$PATH
           export SLIMMED=1
+          
+          # [QUAN TRỌNG] Các dòng lệnh ép Xcode mới bỏ qua lỗi thiếu khai báo thư viện của Amethyst
+          export CFLAGS="-Wno-error=implicit-function-declaration"
+          export OBJCFLAGS="-Wno-error=implicit-function-declaration"
+          export CXXFLAGS="-Wno-error=implicit-function-declaration"
+          
           if [ "${{ matrix.platform_name }}" == "ios" ]; then
             # Build ipa and tipa for iOS
             gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }}
