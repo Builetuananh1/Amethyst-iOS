@@ -18,15 +18,20 @@ jobs:
         include:
           - platform: 2
             platform_name: ios
-    
-    runs-on: J316sAP
+
+    runs-on: macos-latest
     steps:
+      - name: Install include tools
+        run: brew install temurin@8 ldid make
+
       - name: Remove work folders
+        env:
+          password: ${{ secrets.ELLIE_MINI_SECRET }}
         run: |
           echo "before"
           ls -lah ./
-          rm -rf ./* || true
-          rm -rf ./.??* || true
+          echo $password | sudo -S rm -rf ./* || true
+          echo $password | sudo -S rm -rf ./.??* || true
           echo "after"
           ls -lah ./
           
@@ -61,8 +66,8 @@ jobs:
         continue-on-error: true
         run: |
           cd gl4es
-          git config user.email "github-actions@users.noreply.github.com"
-          git config user.name "github-actions"
+          git config --global user.email "github-actions@users.noreply.github.com"
+          git config --global user.name "github-actions"
           export PATH=/opt/procursus/bin:$PATH
           wget https://github.com/leetal/ios-cmake/raw/master/ios.toolchain.cmake
           cmake -B build -DCMAKE_TOOLCHAIN_FILE=ios.toolchain.cmake -DDEFAULT_ES=2 \
@@ -80,8 +85,10 @@ jobs:
           git push
 
       - name: Build for ${{ matrix.platform_name }}
+        env:
+          password: ${{ secrets.ELLIE_MINI_SECRET }}
         run: |
-          export PATH=/opt/homebrew/bin:$PATH
+          export PATH=/opt/procursus/bin:/opt/homebrew/bin:$PATH
           export SLIMMED=1
           if [ "${{ matrix.platform_name }}" == "ios" ]; then
             # Build ipa and tipa for iOS
@@ -98,30 +105,30 @@ jobs:
       - name: Upload regular ipa
         uses: actions/upload-artifact@main
         with:
-          name: org.angelauramc.amethyst-${{ matrix.platform_name }}.ipa
-          path: artifacts/org.angelauramc.amethyst-*-${{ matrix.platform_name }}.ipa
+          name: org.builetuananh.amethyst-${{ matrix.platform_name }}.ipa
+          path: artifacts/org.builetuananh.amethyst-*-${{ matrix.platform_name }}.ipa
 
       - name: Upload regular tipa
         uses: actions/upload-artifact@main
         with:
-          name: org.angelauramc.amethyst-${{ matrix.platform_name }}-trollstore.tipa
-          path: artifacts/org.angelauramc.amethyst-*-${{ matrix.platform_name }}-trollstore.tipa
+          name: org.builetuananh.amethyst-${{ matrix.platform_name }}-trollstore.tipa
+          path: artifacts/org.builetuananh.amethyst-*-${{ matrix.platform_name }}-trollstore.tipa
 
       - name: Upload slimmed ipa
         uses: actions/upload-artifact@main
         with:
-          name: org.angelauramc.amethyst.slimmed-${{ matrix.platform_name }}.ipa
-          path: artifacts/org.angelauramc.amethyst.slimmed-*-${{ matrix.platform_name }}.ipa
+          name: org.builetuananh.amethyst.slimmed-${{ matrix.platform_name }}.ipa
+          path: artifacts/org.builetuananh.amethyst.slimmed-*-${{ matrix.platform_name }}.ipa
 
       - name: Upload slimmed tipa
         uses: actions/upload-artifact@main
         with:
-          name: org.angelauramc.amethyst.slimmed-${{ matrix.platform_name }}-trollstore.tipa
-          path: artifacts/org.angelauramc.amethyst.slimmed-*-${{ matrix.platform_name }}-trollstore.tipa
+          name: org.builetuananh.amethyst.slimmed-${{ matrix.platform_name }}-trollstore.tipa
+          path: artifacts/org.builetuananh.amethyst.slimmed-*-${{ matrix.platform_name }}-trollstore.tipa
 
-      - name: Upload PojavLauncher.dSYM
+      - name: Upload Amethyst.dSYM
         uses: actions/upload-artifact@main
         if: matrix.platform_name == 'ios'
         with:
-          name: AngelAuraAmethyst.dSYM
-          path: artifacts/AngelAuraAmethyst.dSYM
+          name: Amethyst.dSYM
+          path: artifacts/Amethyst.dSYM
