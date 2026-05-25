@@ -1,6 +1,13 @@
 name: Development build
 
 on:
+  pull_request:
+    branches-ignore:
+      - 'l10n_main'
+    types: [opened, reopened]
+  push:
+    branches-ignore:
+      - 'l10n_main'
   workflow_dispatch:
 
 jobs:
@@ -17,30 +24,33 @@ jobs:
     runs-on: macos-15
 
     steps:
-      - name: Remove work folders
-        run: |
-          rm -rf ./* || true
-          rm -rf ./.??* || true
-
-      - name: Checkout repository
-        uses: actions/checkout@main
-
-      - name: Checkout repository submodules
-        run: git submodule update --init --recursive
+      - name: Install include tools
+        run: brew install make ldid temurin@8
 
       - name: Set up Xcode version
         uses: maxim-lobanov/setup-xcode@master
         with:
           xcode-version: '26.1'
 
-      - name: Install build tools
-        run: brew install make ldid temurin@8
-
       - name: Set up Java 8
         run: |
           export JAVA_HOME=$(/usr/libexec/java_home -v 1.8)
           echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
           echo "$JAVA_HOME/bin" >> $GITHUB_PATH
+
+      - name: Remove work folders
+        env:
+          password: ${{ secrets.ELLIE_MINI_SECRET }}
+        run: |
+          echo "Cleaning workspace..."
+          echo $password | sudo -S rm -rf ./* || true
+          echo $password | sudo -S rm -rf ./.??* || true
+
+      - name: Checkout repository
+        uses: actions/checkout@main
+
+      - name: Checkout repository submodules
+        run: git submodule update --init --recursive
 
       - name: Get gl4es latest commit hash
         id: gl4es-sha
@@ -124,3 +134,11 @@ jobs:
         with:
           name: org.builetuananh.amethyst.slimmed-${{ matrix.platform_name }}-trollstore.tipa
           path: artifacts/*.slimmed-*-${{ matrix.platform_name }}-trollstore.tipa
+
+      # Mang phần upload dSYM từ Pojav sang nhưng dùng wildcard *.dSYM để tương thích hoàn toàn với file gốc
+      - name: Upload dSYM
+        uses: actions/upload-artifact@main
+        if: matrix.platform_name == 'ios'
+        with:
+          name: Amethyst.dSYM
+          path: artifacts/*.dSYM
